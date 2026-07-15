@@ -178,9 +178,15 @@ Low-scored true endings include `en__078` pause 0 with score 0.133 and `hi__033`
 | `NOTES.md` | Required short model summary, failure cases, and next steps |
 | `eot_model.joblib` | Saved fitted classifier loaded by `predict.py` |
 | `eot_features.py` | Causal feature implementation required by `predict.py` |
+| `train_model.py` | Reproducible grouped-OOF training and final artifact creation |
+| `test_causality.py` | Dynamic future-audio invariance test for all 496 supplied pauses |
+| `requirements.txt` | Minimal Python runtime dependency list |
+| `starter/score.py` | Assignment-provided official constrained-latency scorer |
+| `oof_final_english.csv` | Honest grouped-OOF English probabilities reported in the results |
+| `oof_final_hindi.csv` | Honest grouped-OOF Hindi probabilities reported in the results |
 | `README.md` | Complete project documentation and usage guide |
 
-The first six files are the named assignment deliverables. The model and feature module are required runtime dependencies. The README documents the complete project without publishing the raw call recordings or unnecessary intermediate artifacts.
+The first six files are the named assignment deliverables. The model and feature module are required runtime dependencies. The remaining files make the training, causality audit, dependency setup, grouped-validation scores, and official scoring commands directly inspectable and reproducible without publishing raw call recordings or unnecessary intermediate experiments.
 
 ## Environment
 
@@ -236,9 +242,9 @@ wrote 248 predictions -> predictions_check_english.csv
 
 The output contains one row for every input annotation and probabilities are constrained to `[0, 1]`.
 
-## Scoring with the assignment handout
+## Scoring
 
-The official `starter/score.py` is part of the supplied assignment handout rather than this submission repository. With that scorer available, run:
+The assignment-provided official scorer is included at `starter/score.py`. With the supplied dataset available, run:
 
 ```bash
 python starter/score.py --data_dir eot_data/english --pred predictions_english.csv
