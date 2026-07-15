@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>End-of-Turn Detection — Solution Summary</title>
+  <style>
+    :root { --ink:#172033; --muted:#5d677b; --blue:#315ee7; --cyan:#18a6a6; --paper:#fff; --wash:#f3f6fc; --line:#dbe2ef; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--wash); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:1040px; margin:auto; background:var(--paper); padding:56px clamp(24px,6vw,72px); box-shadow:0 0 50px #24345a18; }
+    h1 { font-size:clamp(2.1rem,5vw,4rem); line-height:1.02; margin:.15em 0; letter-spacing:-.045em; }
+    h2 { margin-top:2.2em; border-top:1px solid var(--line); padding-top:1.2em; }
+    h3 { margin-top:1.6em; }
+    .eyebrow { color:var(--blue); text-transform:uppercase; letter-spacing:.14em; font-weight:750; font-size:.78rem; }
+    .lede { font-size:1.22rem; color:var(--muted); max-width:760px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin:28px 0; }
+    .card { padding:20px; background:var(--wash); border:1px solid var(--line); border-radius:12px; }
+    .big { display:block; font-size:2rem; font-weight:800; color:var(--blue); }
+    table { border-collapse:collapse; width:100%; margin:18px 0; font-size:.94rem; }
+    th,td { border-bottom:1px solid var(--line); padding:11px 9px; text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; }
+    code { background:#edf1fa; padding:.12em .35em; border-radius:4px; }
+    pre { overflow:auto; color:#edf3ff; background:#172033; padding:18px; border-radius:10px; }
+    .bar-row { display:grid; grid-template-columns:90px 1fr 80px; align-items:center; gap:10px; margin:10px 0; }
+    .track { height:22px; background:#e8edf7; border-radius:4px; overflow:hidden; }
+    .bar { height:100%; background:linear-gradient(90deg,var(--blue),var(--cyan)); }
+    .callout { border-left:4px solid var(--cyan); background:#effafa; padding:14px 18px; margin:22px 0; }
+    .small { color:var(--muted); font-size:.9rem; }
+    @media print { body{background:white} main{box-shadow:none;padding:20px} }
+  </style>
+</head>
+<body><main>
+  <div class="eyebrow">CPU-only · causal · bilingual</div>
+  <h1>Knowing when the user is finished</h1>
+  <p class="lede">A compact prosodic classifier distinguishes a real end of turn from an internal pause without hearing any future audio. On grouped English validation it cuts mean delay by 522 ms while respecting the 5% interruption budget.</p>
+
+  <div class="cards">
+    <div class="card"><span class="big">1078 ms</span>English grouped-validation delay</div>
+    <div class="card"><span class="big">0.790</span>Hindi grouped-validation AUC</div>
+    <div class="card"><span class="big">136</span>causal features</div>
+    <div class="card"><span class="big">200</span>complete turns</div>
+  </div>
+
+  <h2>Problem and causality</h2>
+  <p>At every annotated silence, the live agent must output <code>p_eot</code>: the probability that the user has finished. A false positive can talk over the user; a false negative adds silence. For a decision at <code>pause_start</code>, <code>eot_features.py</code> first takes the single slice <code>x[:floor(pause_start*sr)]</code>, and every acoustic calculation operates only on that past slice. The feature API does not accept <code>pause_end</code> or pause duration.</p>
+  <div class="callout"><strong>Automated audit:</strong> for every one of the 496 supplied annotations, <code>test_causality.py</code> replaces every audio sample at and after <code>pause_start</code> with random noise and asserts that all 136 features remain bit-for-bit identical.</div>
+
+  <h2>Dataset</h2>
+  <table>
+    <thead><tr><th>Language</th><th>Turns</th><th>Pauses</th><th>Hold</th><th>EOT</th><th>Pauses / turn</th><th>Range</th></tr></thead>
+    <tbody>
+      <tr><td>English</td><td>100</td><td>248</td><td>148 (59.7%)</td><td>100 (40.3%)</td><td>2.48</td><td>1–8</td></tr>
+      <tr><td>Hindi</td><td>100</td><td>248</td><td>148 (59.7%)</td><td>100 (40.3%)</td><td>2.48</td><td>1–8</td></tr>
+    </tbody>
+  </table>
+  <p>Long English holds reach 3.0 s (<code>en__091</code> and <code>en__095</code>), showing why a universal silence timer is costly. Hindi holds are shorter—the longest is 1.5 s—which explains why its silence-only baseline can wait 850 ms and still sit exactly at the cutoff budget.</p>
+
+  <h2>Signals used</h2>
+  <p>Features are calculated over the last 0.3, 0.7, 1.5, and 3.0 seconds, allowing the classifier to contrast the immediate boundary with longer prosodic context.</p>
+  <table>
+    <thead><tr><th>Feature family</th><th>What it captures</th><th>Why it can help</th></tr></thead>
+    <tbody>
+      <tr><td>Energy</td><td>Level, spread, quantiles, local slope, half-window change, active ratio</td><td>Terminal energy decay and final-syllable emphasis</td></tr>
+      <tr><td>Pitch / voicing</td><td>F0 statistics and slope, voiced ratio, final voiced run, gap from final voicing</td><td>Continuation rises versus terminal falls and phrase completion</td></tr>
+      <tr><td>Rhythm / spectrum proxy</td><td>Energy-peak rate and zero-crossing statistics</td><td>Speaking rate and boundary articulation</td></tr>
+      <tr><td>Causal position</td><td>Elapsed speech context and pause index</td><td>Later pauses are more likely to end a turn, without revealing future pauses</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Model and validation</h2>
+  <p>The final classifier is a soft-probability blend: four parts Extra Trees to one part balanced, standardized logistic regression. Extra Trees captures nonlinear relationships among energy, pitch, and position; logistic regression smooths the boundary. Both languages train together. Five-fold <strong>GroupKFold</strong> validation groups on language folder plus <code>turn_id</code>, so no pause from a validation turn appears in its training fold.</p>
+  <p>The final artifact is fitted once on all supplied training turns. <code>predict.py</code> only loads that artifact, extracts causal features, and predicts; it never trains or refits on the target folder.</p>
+
+  <h2>Results</h2>
+  <h3>Grouped out-of-fold result used for model selection</h3>
+  <table>
+    <thead><tr><th>Language</th><th>System</th><th>Delay ≤5% cutoffs</th><th>Cutoffs</th><th>AUC</th><th>Threshold / action delay</th></tr></thead>
+    <tbody>
+      <tr><td>English</td><td>Silence-only</td><td>1600 ms</td><td>0.0%</td><td>0.506</td><td>1.00 / 1600 ms</td></tr>
+      <tr><td>English</td><td><strong>Final model</strong></td><td><strong>1078 ms</strong></td><td>5.0%</td><td>0.691</td><td>0.50 / 650 ms</td></tr>
+      <tr><td>Hindi</td><td>Silence-only</td><td>850 ms</td><td>5.0%</td><td>0.516</td><td>0.05 / 850 ms</td></tr>
+      <tr><td>Hindi</td><td><strong>Final model</strong></td><td><strong>850 ms</strong></td><td>5.0%</td><td>0.790</td><td>0.05 / 850 ms</td></tr>
+    </tbody>
+  </table>
+  <div aria-label="English mean response delay comparison">
+    <div class="bar-row"><span>Baseline</span><div class="track"><div class="bar" style="width:100%"></div></div><strong>1600</strong></div>
+    <div class="bar-row"><span>Model</span><div class="track"><div class="bar" style="width:67.4%"></div></div><strong>1078</strong></div>
+  </div>
+  <p class="small">Lower is better; bar values are milliseconds. The required prediction CSVs score at 100 ms on their fitted rows, but those are training diagnostics and are deliberately not presented as generalization results.</p>
+
+  <h2>Error analysis</h2>
+  <p>The largest grouped-validation false-positive scores include <code>en__090</code> pause 1 (a 1.6 s hold, score 0.774) and <code>hi__085</code> pause 1 (a 0.5 s hold, score 0.720). Their pre-pause features resemble those of a completed phrase. Low-scored true endings include <code>en__078</code> pause 0 (0.133) and <code>hi__033</code> pause 2 (0.137), whose acoustic features appear nonterminal to the model. These errors show the remaining limit of prosody without lexical or conversational context.</p>
+
+  <h2>Why it beats status quo</h2>
+  <p>A silence-only system gives every pause the same probability and can protect against long internal pauses only by waiting. This model ranks likely endings using information already spoken. On English, that permits a 650 ms action delay for confident decisions and reduces average response delay by 32.6% at the allowed interruption ceiling. On Hindi, it raises AUC from near-random 0.516 to 0.790 even though the discrete scorer’s unusually favorable silence baseline remains tied.</p>
+
+  <h2>Work split and next steps</h2>
+  <p><strong>Human contribution:</strong> installed and verified the required CPU environment, supplied the assignment materials and execution plan, and retained responsibility for listening-based interpretation and the final five-minute discussion. <strong>Coding-agent contribution:</strong> audited the requirements, implemented the causal feature pipeline, trained and ablated models, ran grouped scoring, generated predictions and the model artifact, added the causality test, and wrote the submission documentation.</p>
+  <p>With another day, the next experiment would use nested grouped validation to tune directly for constrained latency, add speaker-normalized prosody when speaker identity is available, and manually categorize more of the worst errors. Lexical information from a locally trained recognizer could help, but pretrained ASR is intentionally excluded by the assignment rules.</p>
+
+  <h2>Reproduce</h2>
+  <pre>python train_model.py --data_dirs eot_data/english eot_data/hindi \
+  --model_out eot_model.joblib --oof_prefix oof_final
+python test_causality.py
+python predict.py --data_dir eot_data/english --out predictions.csv
+python starter/score.py --data_dir eot_data/english --pred predictions.csv</pre>
+  <p class="small">All computation is local and CPU-only. No pretrained weights, external datasets, cloud APIs, or post-pause audio are used.</p>
+</main></body></html>
